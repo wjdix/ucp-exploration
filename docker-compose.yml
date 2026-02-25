@@ -1,0 +1,25 @@
+services:
+  business:
+    build: ./services/business
+    ports:
+      - "8001:8000"
+    environment:
+      - PSP_URL=http://psp:8000
+    depends_on:
+      psp:
+        condition: service_healthy
+
+  credential-provider:
+    build: ./services/credential-provider
+    ports:
+      - "8002:8000"
+
+  psp:
+    build: ./services/psp
+    ports:
+      - "8003:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
