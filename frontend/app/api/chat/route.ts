@@ -1,4 +1,4 @@
-import { streamText, stepCountIs } from 'ai';
+import { streamText, stepCountIs, convertToModelMessages } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { getPaymentToken } from '@/lib/tools';
@@ -31,7 +31,7 @@ Guide users through this flow:
 4. Get a payment token (use getPaymentToken) and complete the purchase (use complete_checkout)
 
 Always confirm the order total with the user before completing payment. Be concise and friendly.`,
-    messages,
+    messages: await convertToModelMessages(messages),
     tools: {
       // MCP-discovered tools from the Business service
       ...businessTools,

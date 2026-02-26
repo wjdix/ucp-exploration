@@ -21,7 +21,7 @@ from models import (
 from sessions import complete_session, create_session, get_session, update_session
 
 mcp = FastMCP(
-    "UCP Business Service",
+    "UCP Book Store",
     stateless_http=True,
     json_response=True,
     streamable_http_path="/",
@@ -43,7 +43,7 @@ def get_product_details(product_id: str) -> dict:
     """Get detailed information about a specific product.
 
     Args:
-        product_id: The product identifier (e.g. "prod_001")
+        product_id: The product identifier (e.g. "prod_b001")
     """
     product = get_product(product_id)
     if product is None:
@@ -58,7 +58,7 @@ def create_checkout(items: list[dict]) -> dict:
     Args:
         items: List of items to purchase. Each item should have
                "product_id" (string) and "quantity" (integer, default 1).
-               Example: [{"product_id": "prod_001", "quantity": 2}]
+               Example: [{"product_id": "prod_b001", "quantity": 2}]
     """
     line_item_requests = [
         LineItemRequest(product_id=item["product_id"], quantity=item.get("quantity", 1))

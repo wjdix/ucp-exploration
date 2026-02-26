@@ -9,6 +9,26 @@ services:
       psp:
         condition: service_healthy
 
+  business-2:
+    build: ./services/business-2
+    ports:
+      - "8004:8000"
+    environment:
+      - PSP_URL=http://psp:8000
+    depends_on:
+      psp:
+        condition: service_healthy
+
+  aggregator:
+    build: ./services/aggregator
+    ports:
+      - "8005:8000"
+    environment:
+      - 'STORES=[{"store_id":"electronics","name":"Demo Electronics Store","mcp_url":"http://business:8000/mcp/"},{"store_id":"books","name":"Demo Book Store","mcp_url":"http://business-2:8000/mcp/"}]'
+    depends_on:
+      - business
+      - business-2
+
   credential-provider:
     build: ./services/credential-provider
     ports:
