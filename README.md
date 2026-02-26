@@ -1,12 +1,16 @@
 # UCP Agentic Commerce Demo
 
-A sample implementation of agentic commerce using the [Universal Commerce Protocol (UCP)](https://ucp.dev/). An AI shopping assistant guides users through product discovery and checkout — entirely through a chat interface.
+A sample implementation of agentic commerce using the [Universal Commerce Protocol (UCP)](https://ucp.dev/). AI shopping assistants guide users through product discovery and checkout — entirely through a chat interface.
 
 UCP is an open standard co-developed by Google, Shopify, Etsy, Walmart, Target, and Wayfair that defines how platforms, AI agents, and businesses conduct commerce.
 
+This demo includes two modes: a **single-store** frontend that talks directly to one merchant, and a **multi-store** frontend that searches across multiple merchants via an aggregator service.
+
 ## Architecture
 
-This demo implements the four UCP participants as separate services:
+### Single-Store Mode
+
+The original frontend connects directly to one merchant's MCP endpoint:
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -28,14 +32,43 @@ This demo implements the four UCP participants as separate services:
        └──────── authorize payment ───────┘
 ```
 
-The AI agent **auto-discovers** the merchant's checkout capabilities via MCP (Model Context Protocol). The Business service exposes an MCP server at `/mcp/` that advertises tools like `browse_products`, `create_checkout`, `update_checkout`, and `complete_checkout`. The agent doesn't need hardcoded knowledge of these tools -- it discovers them at runtime from the merchant's MCP endpoint, which is advertised in the UCP discovery document at `/.well-known/ucp`.
+### Multi-Store Mode
 
-The Credential Provider remains a direct REST call since it's a separate UCP participant (not part of the merchant's capabilities).
+The multi-store frontend connects to an aggregator that proxies MCP calls across multiple merchants:
+
+```
+┌──────────────────────────────────────────────────────┐
+│      Next.js Multi-Store Chat (Platform / Agent)     │
+│         Vercel AI SDK + Claude tool calling          │
+│                   localhost:3001                     │
+└────────┬──────────────────────────────────┬──────────┘
+         │ MCP (auto-discovered             │ REST
+         │ aggregated tools)                │
+         ▼                                  ▼
+┌─────────────────┐                ┌─────────────┐
+│   Aggregator    │                │ Credential  │
+│   :8005         │                │  Provider   │
+│   MCP proxy     │                │  :8002      │
+└───┬─────────┬───┘                └─────────────┘
+    │ MCP     │ MCP
+    ▼         ▼
+┌────────┐ ┌────────┐    ┌───────────┐
+│Business│ │Business│    │    PSP    │
+│  :8001 │ │ 2:8004 │───▶│  :8003    │
+│Electr. │ │ Books  │    │           │
+└────┬───┘ └────┬───┘    └───────────┘
+     └──── authorize payment ──┘
+```
+
+The aggregator discovers each store's tools via MCP, then exposes unified tools (`search_products`, `create_checkout`, `update_checkout`, `complete_checkout`) that route to the correct store. Products are tagged with `store_id` and `store_name` so the agent knows which store to create checkouts against.
 
 | Service | Role | Port |
 |---------|------|------|
-| **Frontend** | AI shopping assistant chat UI. Auto-discovers merchant tools via MCP. | 3000 |
-| **Business** | UCP-compliant merchant. Exposes MCP server for tool discovery + REST API for checkout. | 8001 |
+| **Frontend** | Single-store AI shopping assistant. Auto-discovers one merchant's tools via MCP. | 3000 |
+| **Frontend Multi** | Multi-store AI shopping assistant. Discovers aggregated tools from multiple merchants. | 3001 |
+| **Business** | UCP-compliant electronics merchant. MCP server + REST API. | 8001 |
+| **Business 2** | UCP-compliant book store. Same architecture as Business, different catalog. | 8004 |
+| **Aggregator** | MCP-to-MCP proxy. Queries multiple stores and exposes unified tools. | 8005 |
 | **Credential Provider** | Simulates a digital wallet (e.g. Google Wallet, Apple Pay). Issues tokenized payment credentials. | 8002 |
 | **PSP** | Simulates a payment processor (e.g. Stripe, Adyen). Authorizes payment tokens. | 8003 |
 
@@ -44,19 +77,42 @@ The Credential Provider remains a direct REST call since it's a separate UCP par
 ```
 ucp-example/
 ├── docker-compose.yml                 # Runs all backend services
-├── frontend/                          # Next.js chat app (Platform/Agent)
+│
+├── frontend/                          # Single-store Next.js chat app
 │   ├── app/
 │   │   ├── page.tsx                   # Chat UI using useChat hook
 │   │   └── api/chat/route.ts         # AI agent: MCP client + tool orchestration
 │   └── lib/tools.ts                   # Credential Provider tool (direct REST)
 │
+├── frontend-multi/                    # Multi-store Next.js chat app
+│   ├── app/
+│   │   ├── page.tsx                   # Chat UI (multi-store variant)
+│   │   └── api/chat/route.ts         # AI agent: connects to aggregator MCP
+│   └── lib/tools.ts                   # Credential Provider tool (direct REST)
+│
 └── services/
-    ├── business/                      # Python/FastAPI merchant service
+    ├── business/                      # Electronics store (Python/FastAPI)
     │   ├── main.py                    # FastAPI app: REST routes + MCP server mount
     │   ├── mcp_tools.py               # MCP tool definitions (auto-discovered by agents)
     │   ├── models.py                  # Pydantic models (CheckoutSession, Buyer, etc.)
-    │   ├── catalog.py                 # In-memory product catalog (4 electronics items)
+    │   ├── catalog.py                 # Product catalog (headphones, keyboard, etc.)
     │   ├── sessions.py                # Checkout session store + PSP integration
+    │   ├── Dockerfile
+    │   └── pyproject.toml
+    │
+    ├── business-2/                    # Book store (Python/FastAPI)
+    │   ├── main.py                    # Same structure as business/
+    │   ├── mcp_tools.py               # Same MCP tools, different store name
+    │   ├── models.py                  # Shared model definitions
+    │   ├── catalog.py                 # Book catalog (DDIA, SICP, Clean Code, etc.)
+    │   ├── sessions.py                # Checkout session store + PSP integration
+    │   ├── Dockerfile
+    │   └── pyproject.toml
+    │
+    ├── aggregator/                    # Multi-store MCP proxy (Python/FastAPI)
+    │   ├── main.py                    # FastAPI app with MCP server mount
+    │   ├── mcp_tools.py               # Unified tools that proxy to individual stores
+    │   ├── store_registry.py          # Store config loaded from STORES env var
     │   ├── Dockerfile
     │   └── pyproject.toml
     │
@@ -85,9 +141,11 @@ ucp-example/
 docker compose up --build
 ```
 
-This starts the Business, Credential Provider, and PSP services.
+This starts all backend services: Business (electronics), Business 2 (books), Aggregator, Credential Provider, and PSP.
 
-### 2. Start the frontend
+### 2. Start a frontend
+
+**Single-store** (connects directly to the electronics store):
 
 ```sh
 cd frontend
@@ -96,9 +154,19 @@ npm install
 npm run dev
 ```
 
+**Multi-store** (connects to the aggregator, searches across all stores):
+
+```sh
+cd frontend-multi
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env.local
+npm install
+npm run dev
+```
+
 ### 3. Open the chat
 
-Navigate to [http://localhost:3000](http://localhost:3000) and start shopping.
+- Single-store: [http://localhost:3000](http://localhost:3000)
+- Multi-store: [http://localhost:3001](http://localhost:3001)
 
 ## Key Interactions
 
@@ -238,7 +306,9 @@ sequenceDiagram
 
 ## API Reference
 
-### Business Service (`:8001`)
+### Business Services (`:8001` electronics, `:8004` books)
+
+Both business services expose identical interfaces with different product catalogs.
 
 **MCP Endpoint** (`/mcp/`) -- auto-discovered tools:
 
@@ -261,6 +331,26 @@ sequenceDiagram
 | `GET` | `/checkout-sessions/{id}` | Get session state |
 | `PUT` | `/checkout-sessions/{id}` | Update buyer/fulfillment info |
 | `POST` | `/checkout-sessions/{id}/complete` | Complete with payment |
+
+### Aggregator (`:8005`)
+
+**MCP Endpoint** (`/mcp/`) -- unified tools across all stores:
+
+| Tool | Description |
+|------|-------------|
+| `search_products` | Search products across all registered stores. Accepts optional `query` filter. Returns products tagged with `store_id` and `store_name`. |
+| `create_checkout` | Create a checkout at a specific store (requires `store_id`). |
+| `update_checkout` | Update a checkout session (routes to the correct store automatically). |
+| `complete_checkout` | Complete a checkout (routes to the correct store automatically). |
+
+**REST Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/stores` | List registered stores and their MCP URLs |
+| `GET` | `/health` | Health check |
+
+The aggregator reads its store list from the `STORES` environment variable (JSON array).
 
 ### Credential Provider (`:8002`)
 
