@@ -7,9 +7,9 @@ RUN pip install uv
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY credential-provider/pyproject.toml .
 RUN uv sync
 
-COPY main.py .
+COPY credential-provider/main.py .
 
 CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

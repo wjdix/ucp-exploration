@@ -3,6 +3,7 @@ import contextlib
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from ap2 import get_merchant_public_jwk
 from catalog import get_product, list_products
 from mcp_tools import mcp
 from models import (
@@ -57,7 +58,17 @@ async def ucp_discovery():
                 "mcp": {
                     "endpoint": "http://localhost:8001/mcp/",
                 },
-            }
+            },
+            {
+                "id": "dev.ucp.shopping.ap2_mandate",
+                "version": "2026-01-11",
+                "extends": "dev.ucp.shopping.checkout",
+                "config": {
+                    "vp_formats_supported": {
+                        "dc+sd-jwt": {},
+                    },
+                },
+            },
         ],
         "payment_handlers": [
             {
@@ -66,6 +77,7 @@ async def ucp_discovery():
                 "name": "Demo Payment Gateway",
             }
         ],
+        "signing_keys": [get_merchant_public_jwk()],
     }
 
 

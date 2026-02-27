@@ -180,13 +180,20 @@ async def complete_checkout(
     session_id: str,
     payment_token: str,
     payment_type: str = "PAYMENT_GATEWAY",
+    checkout_mandate: str | None = None,
+    intent_mandate: str | None = None,
 ) -> dict:
     """Complete a checkout session by submitting payment.
+
+    Requires either a checkout_mandate (for interactive purchases) or an
+    intent_mandate (for autonomous agent purchases) for AP2 verification.
 
     Args:
         session_id: The checkout session ID
         payment_token: The tokenized payment credential from the Credential Provider
         payment_type: Payment type (default "PAYMENT_GATEWAY")
+        checkout_mandate: AP2 checkout mandate (SD-JWT+kb) for user-present transactions
+        intent_mandate: AP2 intent mandate (SD-JWT+kb) for autonomous agent transactions
     """
     store_id = _session_store_map.get(session_id)
     if store_id is None:
@@ -196,8 +203,14 @@ async def complete_checkout(
     if store is None:
         return {"error": f"Store not found: {store_id}"}
 
-    return await _call_store_tool(store, "complete_checkout", {
+    args: dict = {
         "session_id": session_id,
         "payment_token": payment_token,
         "payment_type": payment_type,
-    })
+    }
+    if checkout_mandate is not None:
+        args["checkout_mandate"] = checkout_mandate
+    if intent_mandate is not None:
+        args["intent_mandate"] = intent_mandate
+
+    return await _call_store_tool(store, "complete_checkout", args)

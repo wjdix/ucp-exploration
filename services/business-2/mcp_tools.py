@@ -18,7 +18,7 @@ from models import (
     PaymentInstrument,
     PostalAddress,
 )
-from sessions import complete_session, create_session, get_session, update_session
+from sessions import complete_session, create_session, get_session, serialize_session, update_session
 
 mcp = FastMCP(
     "UCP Book Store",
@@ -55,6 +55,9 @@ def get_product_details(product_id: str) -> dict:
 def create_checkout(items: list[dict]) -> dict:
     """Create a new UCP checkout session with the selected products.
 
+    The response includes ap2.merchant_authorization — a cryptographic signature
+    over the checkout terms that proves the merchant committed to these prices.
+
     Args:
         items: List of items to purchase. Each item should have
                "product_id" (string) and "quantity" (integer, default 1).
@@ -68,7 +71,7 @@ def create_checkout(items: list[dict]) -> dict:
         session = create_session(line_item_requests)
     except ValueError as e:
         return {"error": str(e)}
-    return session.model_dump(mode="json")
+    return serialize_session(session)
 
 
 @mcp.tool()
@@ -120,7 +123,7 @@ def update_checkout(
     session = update_session(session_id, buyer=buyer, fulfillment=fulfillment)
     if session is None:
         return {"error": f"Session not found: {session_id}"}
-    return session.model_dump(mode="json")
+    return serialize_session(session)
 
 
 @mcp.tool()
@@ -128,9 +131,14 @@ async def complete_checkout(
     session_id: str,
     payment_token: str,
     payment_type: str = "PAYMENT_GATEWAY",
+    checkout_mandate: str | None = None,
+    intent_mandate: str | None = None,
 ) -> dict:
     """Complete a checkout session by submitting payment. This finalizes the
     purchase and creates an order.
+
+    Requires either a checkout_mandate (for interactive purchases) or an
+    intent_mandate (for autonomous agent purchases) for AP2 verification.
 
     The payment token should be obtained from the Credential Provider before
     calling this tool.
@@ -139,11 +147,15 @@ async def complete_checkout(
         session_id: The checkout session ID
         payment_token: The tokenized payment credential from the Credential Provider
         payment_type: Payment type (default "PAYMENT_GATEWAY")
+        checkout_mandate: AP2 checkout mandate (SD-JWT+kb) for user-present transactions
+        intent_mandate: AP2 intent mandate (SD-JWT+kb) for autonomous agent transactions
     """
     payment = PaymentInstrument(
         credential=PaymentCredential(type=payment_type, token=payment_token)
     )
-    session = await complete_session(session_id, payment=payment)
-    if session is None:
-        return {"error": f"Session not found: {session_id}"}
-    return session.model_dump(mode="json")
+    return await complete_session(
+        session_id,
+        payment=payment,
+        checkout_mandate=checkout_mandate,
+        intent_mandate=intent_mandate,
+    )

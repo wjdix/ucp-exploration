@@ -7,9 +7,10 @@ RUN pip install uv
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY business/pyproject.toml .
 RUN uv sync
 
-COPY . .
+COPY shared/ /app/shared/
+COPY business/ .
 
 CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

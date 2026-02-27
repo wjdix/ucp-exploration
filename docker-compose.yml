@@ -1,26 +1,34 @@
 services:
   business:
-    build: ./services/business
+    build:
+      context: ./services
+      dockerfile: business/Dockerfile
     ports:
       - "8001:8000"
     environment:
       - PSP_URL=http://psp:8000
+      - STORE_ID=electronics
     depends_on:
       psp:
         condition: service_healthy
 
   business-2:
-    build: ./services/business-2
+    build:
+      context: ./services
+      dockerfile: business-2/Dockerfile
     ports:
       - "8004:8000"
     environment:
       - PSP_URL=http://psp:8000
+      - STORE_ID=books
     depends_on:
       psp:
         condition: service_healthy
 
   aggregator:
-    build: ./services/aggregator
+    build:
+      context: ./services
+      dockerfile: aggregator/Dockerfile
     ports:
       - "8005:8000"
     environment:
@@ -30,12 +38,16 @@ services:
       - business-2
 
   credential-provider:
-    build: ./services/credential-provider
+    build:
+      context: ./services
+      dockerfile: credential-provider/Dockerfile
     ports:
       - "8002:8000"
 
   psp:
-    build: ./services/psp
+    build:
+      context: ./services
+      dockerfile: psp/Dockerfile
     ports:
       - "8003:8000"
     healthcheck:

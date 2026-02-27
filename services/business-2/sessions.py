@@ -3,6 +3,7 @@ import uuid
 
 import httpx
 
+from ap2 import sign_checkout_response, verify_checkout_mandate, verify_intent_mandate
 from catalog import get_product
 from models import (
     Buyer,
@@ -17,6 +18,13 @@ from models import (
 _sessions: dict[str, CheckoutSession] = {}
 
 PSP_URL = os.environ.get("PSP_URL", "http://psp:8000")
+STORE_ID = os.environ.get("STORE_ID", "bookstore")
+
+
+def serialize_session(session: CheckoutSession) -> dict:
+    """Serialize a session to dict and sign with merchant authorization."""
+    result = session.model_dump(mode="json")
+    return sign_checkout_response(result)
 
 
 def _build_line_item(req: LineItemRequest) -> LineItem:
@@ -83,24 +91,48 @@ def update_session(
 async def complete_session(
     session_id: str,
     payment: PaymentInstrument,
-) -> CheckoutSession | None:
+    checkout_mandate: str | None = None,
+    intent_mandate: str | None = None,
+) -> dict:
+    """Complete a checkout session. Returns a dict (not a model) so we can include errors.
+
+    Requires either a checkout_mandate or intent_mandate for AP2 verification.
+    """
     session = _sessions.get(session_id)
     if session is None:
-        return None
+        return {"error": f"Session not found: {session_id}"}
 
     if session.status == "completed":
-        return session
+        return serialize_session(session)
+
+    # AP2 mandate verification
+    if checkout_mandate is None and intent_mandate is None:
+        return {"error": "mandate_required", "code": "mandate_required"}
+
+    session_dict = serialize_session(session)
+
+    if checkout_mandate:
+        ok, err = await verify_checkout_mandate(checkout_mandate, session_dict)
+        if not ok:
+            return {"error": err, "code": "mandate_invalid_signature"}
+
+    if intent_mandate:
+        ok, err = await verify_intent_mandate(intent_mandate, session_dict, STORE_ID)
+        if not ok:
+            return {"error": err, "code": "mandate_invalid_signature"}
+
+    # Build PSP request — include intent mandate for defense in depth
+    psp_payload = {
+        "token": payment.credential.token,
+        "amount": session.totals["total"],
+        "currency": "USD",
+        "merchant_id": "merchant_demo",
+    }
+    if intent_mandate:
+        psp_payload["intent_mandate"] = intent_mandate
 
     async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"{PSP_URL}/authorize",
-            json={
-                "token": payment.credential.token,
-                "amount": session.totals["total"],
-                "currency": "USD",
-                "merchant_id": "merchant_demo",
-            },
-        )
+        resp = await client.post(f"{PSP_URL}/authorize", json=psp_payload)
         resp.raise_for_status()
         auth = resp.json()
 
@@ -108,4 +140,4 @@ async def complete_session(
     session.status = "completed"
     session.order_id = f"order_{uuid.uuid4().hex[:12]}"
     _sessions[session_id] = session
-    return session
+    return serialize_session(session)

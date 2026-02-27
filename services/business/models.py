@@ -56,6 +56,11 @@ class PaymentInstrument(BaseModel):
     credential: PaymentCredential
 
 
+class AP2(BaseModel):
+    merchant_authorization: str | None = None
+    checkout_mandate: str | None = None
+
+
 class CheckoutSession(BaseModel):
     id: str
     status: str = "incomplete"
@@ -65,6 +70,7 @@ class CheckoutSession(BaseModel):
     totals: dict[str, float] = Field(default_factory=dict)
     payment: dict | None = None
     order_id: str | None = None
+    ap2: AP2 | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
